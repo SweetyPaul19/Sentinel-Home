@@ -90,7 +90,10 @@ class TelegramLinkingTests(unittest.TestCase):
              patch("app.services.delivery_service.settings.TELEGRAM_CHAT_ID", "wrong-global-id", create=True), \
              patch("app.services.delivery_service.notification_service.send_telegram", return_value=fake_message) as send:
             send_alert_whatsapp("owned", alert)
-        send.assert_called_once_with("owner-chat", "🚨 SentinelHome earthquake alert\nRisk: high (0.900)\n\nSafety guidance:\nMove now.")
+        sent_body = send.call_args.args[1]
+        self.assertIn("<b>SENTINELHOME | EARTHQUAKE ALERT</b>", sent_body)
+        self.assertIn("<b>HIGH RISK</b>", sent_body)
+        self.assertIn("<b>What to do now</b>\nMove now.", sent_body)
 
     def test_expired_link_is_rejected(self):
         user_id = self._register()

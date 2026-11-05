@@ -163,6 +163,7 @@ class DeliveryTests(unittest.TestCase):
             json={
                 "chat_id": "12345",
                 "text": "SentinelHome safety guidance",
+                "parse_mode": "HTML",
                 "disable_web_page_preview": True,
             },
             timeout=15,
