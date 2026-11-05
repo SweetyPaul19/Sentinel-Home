@@ -58,10 +58,12 @@ def link_status():
     if user is None:
         return jsonify({"status": "error", "message": "Authentication required"}), 401
     user = users.get(user["id"]) or user
-    return jsonify({
+    response = jsonify({
         "status": "connected" if user.get("telegram_chat_id") else "pending",
         "telegram_connected": bool(user.get("telegram_chat_id")),
     })
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    return response
 
 
 @telegram_bp.post("/webhook")
@@ -93,4 +95,14 @@ def telegram_webhook():
     link["consumed"] = True
     link["consumed_at"] = _now().isoformat()
     telegram_link_tokens[token] = link
+    try:
+        from app.services.notification_service import send_telegram
+        send_telegram(
+            str(chat["id"]),
+            "✅ Telegram connected to your SentinelHome account. You can return to signup.",
+        )
+    except Exception:
+        # Linking is already persisted; a confirmation-message failure must
+        # not make Telegram retry the update or undo the account link.
+        pass
     return jsonify({"status": "linked"})
