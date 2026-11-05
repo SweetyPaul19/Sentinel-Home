@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
+from copy import deepcopy
 from datetime import datetime, timezone
 from threading import Lock
 from uuid import uuid4
@@ -123,4 +124,7 @@ def start_simulation() -> dict:
 def get_simulation(job_id: str) -> dict | None:
     with _lock:
         job = _jobs.get(job_id)
-        return dict(job) if job else None
+        # Return an isolated snapshot. The worker appends events while the
+        # polling request is serializing its response; sharing the nested
+        # events list can otherwise expose a partial/stale telemetry frame.
+        return deepcopy(job) if job else None

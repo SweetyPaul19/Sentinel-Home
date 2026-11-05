@@ -84,5 +84,5 @@ export function startEarthquakeSimulation(password) {
 }
 
 export function getEarthquakeSimulation(jobId) {
-  return request(`/api/admin/simulation/earthquake/${jobId}`);
+  return request(`/api/admin/simulation/earthquake/${jobId}?ts=${Date.now()}`, { cache: "no-store" });
 }

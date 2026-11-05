@@ -29,8 +29,12 @@ def simulation_status(job_id):
     if job is None:
         return jsonify({"status": "error", "message": "Simulation job not found"}), 404
     if job.get("status") == "failed":
-        return jsonify(job), 502
-    return jsonify(job)
+        response = jsonify(job)
+        response.status_code = 502
+    else:
+        response = jsonify(job)
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    return response
 
 
 @admin_bp.get("/status")
