@@ -27,7 +27,10 @@ class Settings:
         os.getenv("TWILIO_WHATSAPP_TEMPLATE_VARIABLE_COUNT", "0")
     )
     TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
-    TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
+    TELEGRAM_BOT_USERNAME = os.getenv("TELEGRAM_BOT_USERNAME", "").lstrip("@")
+    TELEGRAM_LINK_TOKEN_TTL_SECONDS = int(
+        os.getenv("TELEGRAM_LINK_TOKEN_TTL_SECONDS", "600")
+    )
     TELEGRAM_API_BASE_URL = os.getenv(
         "TELEGRAM_API_BASE_URL", "https://api.telegram.org"
     ).rstrip("/")

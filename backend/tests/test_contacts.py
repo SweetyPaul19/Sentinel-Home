@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 import unittest
 from unittest.mock import patch
 
-from app.core.store import alerts, households
+from app.core.store import alerts, households, users
 from app.main import app
 from app.services.alert_service import create_alert
 from app.services.delivery_service import process_pending_alerts
@@ -14,10 +14,12 @@ class ContactWorkflowTests(unittest.TestCase):
     def setUp(self):
         households.clear()
         alerts.clear()
+        users.clear()
 
     def tearDown(self):
         households.clear()
         alerts.clear()
+        users.clear()
 
     def test_registration_rejects_duplicate_contact_numbers(self):
         response = app.test_client().post("/api/households", json={
@@ -59,6 +61,7 @@ class ContactWorkflowTests(unittest.TestCase):
         alert = create_alert("contacts", hazard="earthquake", risk_score=0.9, message="Move now.")
         fake_message = type("Message", (), {"sid": "WA-test"})()
         with patch("app.services.delivery_service.settings.AUTO_SEND_ALERTS", True), \
+             patch("app.services.delivery_service.settings.TELEGRAM_BOT_TOKEN", ""), \
              patch("app.services.delivery_service.settings.TWILIO_WHATSAPP_FROM", "whatsapp:+14155552671"), \
              patch("app.services.delivery_service.notification_service.send_whatsapp", return_value=fake_message) as send:
             process_pending_alerts()
@@ -71,8 +74,12 @@ class ContactWorkflowTests(unittest.TestCase):
         self.assertEqual(len(stored_alert["deliveries"]), 1)
 
     def test_initial_alert_uses_telegram_when_configured(self):
+        users["telegram-user"] = {
+            "id": "telegram-user", "email": "user@example.com",
+            "telegram_chat_id": "12345",
+        }
         households["telegram-contacts"] = {
-            "id": "telegram-contacts", "safe": False,
+            "id": "telegram-contacts", "owner_id": "telegram-user", "safe": False,
             "primary_contact": {"id": "primary", "name": "User", "phone": "+910000000001"},
         }
         alert = create_alert(
@@ -82,7 +89,6 @@ class ContactWorkflowTests(unittest.TestCase):
         fake_message = type("Message", (), {"sid": "42"})()
         with patch("app.services.delivery_service.settings.AUTO_SEND_ALERTS", True), \
              patch("app.services.delivery_service.settings.TELEGRAM_BOT_TOKEN", "bot-token"), \
-             patch("app.services.delivery_service.settings.TELEGRAM_CHAT_ID", "12345"), \
              patch("app.services.delivery_service.notification_service.send_telegram", return_value=fake_message) as send:
             process_pending_alerts()
 

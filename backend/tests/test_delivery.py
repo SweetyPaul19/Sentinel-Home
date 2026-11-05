@@ -35,6 +35,7 @@ class DeliveryTests(unittest.TestCase):
         )
         fake_message = type("Message", (), {"sid": "SM-test"})()
         with patch("app.services.delivery_service.settings.AUTO_SEND_ALERTS", True), \
+             patch("app.services.delivery_service.settings.TELEGRAM_BOT_TOKEN", ""), \
              patch("app.services.delivery_service.settings.TWILIO_WHATSAPP_FROM", ""), \
              patch("app.services.delivery_service.notification_service.send_sms", return_value=fake_message):
             result = process_pending_alerts()

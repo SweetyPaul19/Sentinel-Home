@@ -13,6 +13,20 @@ from app.services.monitoring_service import run_monitoring_cycle
 _executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="sentinel-simulation")
 _jobs: dict[str, dict] = {}
 _lock = Lock()
+_MAX_RETAINED_COMPLETED_JOBS = 10
+
+
+def _prune_jobs_locked() -> None:
+    """Bound in-process simulation state so repeated demos cannot leak memory."""
+
+    completed = [
+        (job_id, job)
+        for job_id, job in _jobs.items()
+        if job.get("status") in {"completed", "failed"}
+    ]
+    completed.sort(key=lambda item: item[1].get("completed_at", ""))
+    for job_id, _job in completed[:-_MAX_RETAINED_COMPLETED_JOBS]:
+        _jobs.pop(job_id, None)
 
 
 def _fixture(event_id: str) -> dict:
@@ -85,6 +99,16 @@ def start_simulation() -> dict:
     job_id = str(uuid4())
     event_id = f"sentinelhome-simulation-{uuid4()}"
     with _lock:
+        _prune_jobs_locked()
+        active_job = next(
+            (
+                job for job in _jobs.values()
+                if job.get("status") in {"queued", "running"}
+            ),
+            None,
+        )
+        if active_job is not None:
+            return dict(active_job)
         _jobs[job_id] = {
             "job_id": job_id,
             "simulation_event_id": event_id,

@@ -4,6 +4,7 @@ from app.api.admin import admin_bp
 from app.api.auth import auth_bp
 from app.api.alerts import alerts_bp
 from app.api.households import households_bp
+from app.api.telegram import telegram_bp
 from app.core.config import settings
 from app.core.store import alerts, households
 from app.scheduling.scheduler import start_scheduler
@@ -46,6 +47,7 @@ def create_app():
     flask_app.register_blueprint(alerts_bp)
     flask_app.register_blueprint(admin_bp)
     flask_app.register_blueprint(auth_bp)
+    flask_app.register_blueprint(telegram_bp)
 
     if settings.ENABLE_SCHEDULER:
         start_scheduler()
