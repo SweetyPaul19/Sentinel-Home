@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from html import escape
 from datetime import datetime, timedelta, timezone
 
 from app.core.config import settings
@@ -61,25 +62,70 @@ def _whatsapp_template_variables(alert: dict) -> dict[str, str]:
 
 
 def _telegram_alert_body(alert: dict) -> str:
-    """Render the complete generated alert for Telegram."""
+    """Render a clear, Telegram-HTML safety alert with verified event context."""
 
+    hazard = str(alert.get("hazard") or "hazard").strip().replace("_", " ").title()
+    level = str(alert.get("risk_level") or "unknown").strip().upper()
     score = alert.get("risk_score")
-    score_text = f"{float(score):.3f}" if score is not None else "unknown"
-    lines = [
-        "🚨 SentinelHome earthquake alert",
-        f"Risk: {alert.get('risk_level', 'unknown')} ({score_text})",
-        "",
-        "Safety guidance:",
-        str(alert.get("message", "")).strip(),
+    try:
+        score_text = f"{float(score):.2f} / 1.00" if score is not None else "Not available"
+    except (TypeError, ValueError):
+        score_text = "Not available"
+
+    severity_icon = {"HIGH": "🔴", "MEDIUM": "🟠", "LOW": "🟢"}.get(level, "🟡")
+    details = alert.get("event_details") or {}
+    context = []
+    if details.get("place"):
+        context.append(f"📍 <b>Location:</b> {escape(str(details['place'])[:180])}")
+    if details.get("magnitude") is not None:
+        try:
+            context.append(f"📈 <b>Magnitude:</b> {float(details['magnitude']):.1f}")
+        except (TypeError, ValueError):
+            pass
+    if details.get("depth_km") is not None:
+        try:
+            context.append(f"↕️ <b>Depth:</b> {float(details['depth_km']):.1f} km")
+        except (TypeError, ValueError):
+            pass
+    if details.get("distance_km") is not None:
+        try:
+            context.append(f"🏠 <b>Distance from home:</b> {float(details['distance_km']):.1f} km")
+        except (TypeError, ValueError):
+            pass
+    event_time = details.get("time")
+    if event_time is not None:
+        try:
+            occurred = datetime.fromtimestamp(float(event_time) / 1000, tz=timezone.utc)
+            context.append(f"🕒 <b>Event time:</b> {occurred:%d %b %Y, %H:%M UTC}")
+        except (TypeError, ValueError, OSError):
+            pass
+
+    advice = escape(str(alert.get("message") or "Follow local emergency instructions.").strip()[:2200])
+    sections = [
+        f"🚨 <b>SENTINELHOME | {escape(hazard.upper())} ALERT</b>",
+        f"{severity_icon} <b>{escape(level)} RISK</b> · Urgency score: <b>{escape(score_text)}</b>",
     ]
+    if context:
+        sections.append("\n".join(context))
+    sections.extend([
+        f"\n<b>What to do now</b>\n{advice}",
+        "If you are in the affected area, move to a safer place and follow local emergency-service instructions. Check in with everyone in your household.",
+        "Open SentinelHome and select <b>“I’m safe”</b> once everyone has been accounted for.",
+    ])
+
     sources = alert.get("sources") or []
-    if sources:
-        lines.extend(["", "Sources:"])
-        lines.extend(
-            f"- {item.get('source', 'unknown source')}, page {item.get('page', 'unknown')}"
-            for item in sources if isinstance(item, dict)
-        )
-    return "\n".join(lines)[:4096]
+    source_lines = []
+    for item in sources[:3]:
+        if not isinstance(item, dict):
+            continue
+        label = escape(str(item.get("source") or item.get("title") or "Safety guidance")[:120])
+        page = item.get("page")
+        source_lines.append(f"• {label}{f' · p. {escape(str(page))}' if page else ''}")
+    if source_lines:
+        sections.append("<b>Guidance sources</b>\n" + "\n".join(source_lines))
+
+    sections.append("<i>SentinelHome safety notification · Verify conditions with local authorities.</i>")
+    return "\n\n".join(sections)[:4096]
 
 
 def send_alert_whatsapp(household_id: str, alert: dict) -> dict:

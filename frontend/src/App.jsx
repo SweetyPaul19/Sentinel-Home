@@ -286,6 +286,7 @@ import HouseholdRegistration from './pages/Householdregistration'
 import Dashboard from './pages/Dashboard'
 import Simulation from './pages/Simulation'
 import Login from './pages/Login'
+import InfoPage from './pages/InfoPage'
 
 const backgroundImage = '/assets/background-image.jpg'
 const earthImage = '/assets/earth-image.png'
@@ -462,7 +463,7 @@ export const Desktop = () => {
         <div className="text">{''}</div>
 
         <header className="site-nav">
-          <a className="brand" href="#home" aria-label="SentinelHome home">
+          <a className="brand" href="/" aria-label="SentinelHome home">
             <span className="brand-mark" aria-hidden="true">
               <ShieldCheck size={28} strokeWidth={1.8} />
             </span>
@@ -473,12 +474,12 @@ export const Desktop = () => {
           </a>
 
           <nav className="primary-nav" aria-label="Primary navigation">
-            <a className="active" href="#home">Home</a>
-            <a href="#how-it-works">How it works</a>
-            <a href="#features">Features</a>
-            <a href="#disasters">Disasters</a>
-            <a href="#about">About</a>
-            <a href="#blog">Blog</a>
+            <a className="active" href="/">Home</a>
+            <a href="/how-it-works">How it works</a>
+            <a href="/features">Features</a>
+            <a href="/disasters">Disasters</a>
+            <a href="/about">About</a>
+            <a href="/blog">Blog</a>
           </nav>
 
           <div className="nav-actions">
@@ -519,7 +520,7 @@ export const Desktop = () => {
               Get started free
               <ArrowRight size={19} strokeWidth={2} />
             </a>
-            <a className="hero-secondary" href="#how-it-works">
+            <a className="hero-secondary" href="/how-it-works">
               Explore the system
               <ArrowRight size={18} strokeWidth={1.8} />
             </a>
@@ -536,6 +537,11 @@ export default function App() {
       <Route path="/" element={<Desktop />} />
       <Route path="/register" element={<HouseholdRegistration />} />
       <Route path="/login" element={<Login />} />
+      <Route path="/how-it-works" element={<InfoPage />} />
+      <Route path="/features" element={<InfoPage />} />
+      <Route path="/disasters" element={<InfoPage />} />
+      <Route path="/about" element={<InfoPage />} />
+      <Route path="/blog" element={<InfoPage />} />
       <Route path="/dashboard" element={<Dashboard />} />
       <Route path="/dashboard/:householdId" element={<Dashboard />} />
       <Route path="/internal/earthquake-simulation" element={<Simulation />} />
