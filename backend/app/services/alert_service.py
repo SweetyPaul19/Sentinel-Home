@@ -18,6 +18,7 @@ def create_alert(
     message: str,
     sources: list[dict] | None = None,
     event_id: str | None = None,
+    event_details: dict | None = None,
     simulation: bool = False,
 ) -> dict:
     household = households.get(household_id)
@@ -59,6 +60,7 @@ def create_alert(
         "created_at": now,
         "confirmed_at": None,
         "event_id": event_id,
+        "event_details": event_details or {},
         "simulation": bool(simulation),
         "delivery_status": "pending",
         "delivery_channel": None,

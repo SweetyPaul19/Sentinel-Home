@@ -21,6 +21,9 @@ def alert_node(state: SentinelState) -> SentinelState:
             risk_score=assessment["urgency_score"],
             message=advice["message"], sources=advice.get("sources", []),
             event_id=state.get("earthquake", {}).get("id"),
+            event_details={key: state.get("earthquake", {}).get(key) for key in (
+                "place", "magnitude", "depth_km", "distance_km", "time", "url"
+            ) if state.get("earthquake", {}).get(key) is not None},
             simulation=bool(state.get("simulation")),
         )
     except Exception as exc:
