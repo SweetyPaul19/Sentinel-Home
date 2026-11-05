@@ -26,7 +26,7 @@ export function startTelegramLink() {
   return request("/api/telegram/link/start", { method: "POST" });
 }
 export function getTelegramLinkStatus() {
-  return request("/api/telegram/link/status");
+  return request(`/api/telegram/link/status?ts=${Date.now()}`, { cache: "no-store" });
 }
 
 // Households

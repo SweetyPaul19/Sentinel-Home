@@ -58,10 +58,12 @@ def link_status():
     if user is None:
         return jsonify({"status": "error", "message": "Authentication required"}), 401
     user = users.get(user["id"]) or user
-    return jsonify({
+    response = jsonify({
         "status": "connected" if user.get("telegram_chat_id") else "pending",
         "telegram_connected": bool(user.get("telegram_chat_id")),
     })
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    return response
 
 
 @telegram_bp.post("/webhook")
@@ -70,22 +72,29 @@ def telegram_webhook():
     message = update.get("message") or {}
     chat = message.get("chat") or {}
     text = message.get("text") or ""
-    if not chat.get("id") or not isinstance(text, str) or not text.startswith("/start"):
+    if not chat.get("id") or not isinstance(text, str):
         return jsonify({"status": "ignored"})
 
     parts = text.split(maxsplit=1)
+    command = parts[0].split("@", 1)[0] if parts else ""
+    if command != "/start":
+        return jsonify({"status": "ignored"})
+
     token = parts[1].strip() if len(parts) == 2 else ""
     link = telegram_link_tokens.get(token) if token else None
     if not link or link.get("consumed"):
-        return jsonify({"status": "error", "message": "Invalid or expired Telegram link"}), 400
+        # Acknowledge invalid/old updates. Telegram retries non-2xx webhook
+        # responses and can block newer valid /start updates behind one stale
+        # update in its queue.
+        return jsonify({"status": "ignored", "reason": "invalid_or_consumed_link"})
 
     expires_at = _parse_expiry(link.get("expires_at"))
     if expires_at is None or expires_at <= _now():
-        return jsonify({"status": "error", "message": "Telegram link has expired"}), 400
+        return jsonify({"status": "ignored", "reason": "expired_link"})
 
     user = users.get(link.get("user_id"))
     if user is None:
-        return jsonify({"status": "error", "message": "Account not found"}), 400
+        return jsonify({"status": "ignored", "reason": "account_not_found"})
 
     user["telegram_chat_id"] = str(chat["id"])
     user["telegram_linked_at"] = _now().isoformat()
@@ -93,4 +102,14 @@ def telegram_webhook():
     link["consumed"] = True
     link["consumed_at"] = _now().isoformat()
     telegram_link_tokens[token] = link
+    try:
+        from app.services.notification_service import send_telegram
+        send_telegram(
+            str(chat["id"]),
+            "✅ Telegram connected to your SentinelHome account. You can return to signup.",
+        )
+    except Exception:
+        # Linking is already persisted; a confirmation-message failure must
+        # not make Telegram retry the update or undo the account link.
+        pass
     return jsonify({"status": "linked"})

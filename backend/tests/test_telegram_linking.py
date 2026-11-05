@@ -49,7 +49,7 @@ class TelegramLinkingTests(unittest.TestCase):
 
         linked = self.client.post("/api/telegram/webhook", json={
             "message": {
-                "text": f"/start {token}",
+                "text": f"/start@sentinelhome_bot {token}",
                 "chat": {"id": 987654321},
             },
         })
@@ -61,7 +61,8 @@ class TelegramLinkingTests(unittest.TestCase):
         reused = self.client.post("/api/telegram/webhook", json={
             "message": {"text": f"/start {token}", "chat": {"id": 111}},
         })
-        self.assertEqual(reused.status_code, 400)
+        self.assertEqual(reused.status_code, 200)
+        self.assertEqual(reused.get_json()["status"], "ignored")
 
     def test_household_registration_requires_linked_telegram(self):
         self._register()
@@ -101,7 +102,8 @@ class TelegramLinkingTests(unittest.TestCase):
         response = self.client.post("/api/telegram/webhook", json={
             "message": {"text": "/start expired", "chat": {"id": 123}},
         })
-        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["status"], "ignored")
 
 
 if __name__ == "__main__":
