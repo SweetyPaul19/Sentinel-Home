@@ -86,6 +86,12 @@ def register_household():
         return jsonify({"status": "error", "errors": errors}), 400
     if current_user() is None:
         return jsonify({"status": "error", "message": "Create or sign in to an account before registering a household"}), 401
+    if not current_user().get("telegram_chat_id"):
+        return jsonify({
+            "status": "error",
+            "message": "Link Telegram before registering a household",
+            "code": "telegram_required",
+        }), 428
 
     household_id = str(uuid4())
     now = datetime.now(timezone.utc).isoformat()

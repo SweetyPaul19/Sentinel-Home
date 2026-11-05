@@ -18,7 +18,12 @@ def normalize_email(value: str) -> str:
 def public_user(user: dict | None) -> dict | None:
     if not user:
         return None
-    return {"id": user.get("id"), "email": user.get("email"), "household_id": user.get("household_id")}
+    return {
+        "id": user.get("id"),
+        "email": user.get("email"),
+        "household_id": user.get("household_id"),
+        "telegram_connected": bool(user.get("telegram_chat_id")),
+    }
 
 
 def create_user(email: str, password: str) -> dict:

@@ -1,6 +1,12 @@
 import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
-import { getCurrentUser, registerAccount, registerHousehold } from '../api/client'
+import {
+  getTelegramLinkStatus,
+  loginAccount,
+  registerAccount,
+  registerHousehold,
+  startTelegramLink,
+} from '../api/client'
 import {
   ShieldCheck,
   ChevronLeft,
@@ -976,6 +982,10 @@ export default function HouseholdRegistration() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [accountEmail, setAccountEmail] = useState('')
   const [accountPassword, setAccountPassword] = useState('')
+  const [telegramConnected, setTelegramConnected] = useState(false)
+  const [telegramLinking, setTelegramLinking] = useState(false)
+  const [telegramError, setTelegramError] = useState('')
+  const [telegramUrl, setTelegramUrl] = useState('')
 
   const isReviewStep = currentStep === STEP_LABELS.length - 1
 
@@ -1013,14 +1023,58 @@ export default function HouseholdRegistration() {
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
-  // Backend-ready payload matching POST /api/households.
-  // TODO(backend): replace this stub with a real request once the
-  // households endpoint is available, e.g.:
-  //   const res = await fetch('/api/households', {
-  //     method: 'POST',
-  //     headers: { 'Content-Type': 'application/json' },
-  //     body: JSON.stringify(payload),
-  //   })
+  const ensureAccount = async () => {
+    if (!accountEmail || accountPassword.length < 8) {
+      throw new Error('Enter an email and a password of at least 8 characters before connecting Telegram.')
+    }
+    try {
+      await registerAccount(accountEmail, accountPassword)
+    } catch (accountError) {
+      if (!accountError.message.toLowerCase().includes('already exists')) throw accountError
+      // A user who already created the account during an interrupted signup
+      // can resume with the same credentials after a refresh or redirect.
+      await loginAccount(accountEmail, accountPassword)
+    }
+  }
+
+  const connectTelegram = async () => {
+    setTelegramError('')
+    setTelegramLinking(true)
+    let telegramWindow
+    try {
+      // Open synchronously from the button click so browsers do not block it.
+      telegramWindow = window.open('', '_blank', 'noopener,noreferrer')
+      await ensureAccount()
+      const existing = await getTelegramLinkStatus()
+      if (existing.telegram_connected) {
+        setTelegramConnected(true)
+        telegramWindow?.close()
+        return true
+      }
+
+      const link = await startTelegramLink()
+      setTelegramUrl(link.telegram_url)
+      if (telegramWindow) telegramWindow.location.href = link.telegram_url
+
+      for (let attempt = 0; attempt < 60; attempt += 1) {
+        await new Promise((resolve) => window.setTimeout(resolve, 2000))
+        const status = await getTelegramLinkStatus()
+        if (status.telegram_connected) {
+          setTelegramConnected(true)
+          setTelegramError('')
+          return true
+        }
+      }
+      throw new Error('Telegram linking timed out. Open the link again to retry.')
+    } catch (error) {
+      telegramWindow?.close()
+      setTelegramError(error.message)
+      return false
+    } finally {
+      setTelegramLinking(false)
+    }
+  }
+
   const handleSubmit = async () => {
     const stepErrors = validateStep(currentStep, formData)
     if (Object.keys(stepErrors).length > 0) {
@@ -1061,14 +1115,9 @@ export default function HouseholdRegistration() {
 
     setIsSubmitting(true)
     try {
-      if (!accountEmail || accountPassword.length < 8) throw new Error('Enter an email and a password of at least 8 characters before completing registration.')
-      try {
-        await registerAccount(accountEmail, accountPassword)
-      } catch (accountError) {
-        // A user who already signed in may resume an interrupted household
-        // setup. Only continue when the existing cookie proves their identity.
-        if (!accountError.message.toLowerCase().includes('already exists')) throw accountError
-        await getCurrentUser()
+      if (!telegramConnected) {
+        await connectTelegram()
+        return
       }
       const result = await registerHousehold(payload)
       navigate(`/dashboard/${result.household.id}`)
@@ -1958,6 +2007,18 @@ export default function HouseholdRegistration() {
   cursor: default;
 }
 
+.telegram-registration-panel {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--hr-border-soft);
+}
+
+.telegram-registration-panel p {
+  margin: 6px 0 10px;
+  color: var(--hr-text-muted);
+  line-height: 1.5;
+}
+
 /* ---------- Accessibility ---------- */
 
 .hr-page :focus-visible {
@@ -2024,6 +2085,25 @@ export default function HouseholdRegistration() {
                 <label>Password<input type="password" value={accountPassword} onChange={(e) => setAccountPassword(e.target.value)} placeholder="At least 8 characters" autoComplete="new-password" /></label>
               </div>
               <small>Already registered? <a href="/login">Sign in instead</a></small>
+              <div className="telegram-registration-panel">
+                <span className="eyebrow">REQUIRED FOR SAFETY ALERTS</span>
+                <p>
+                  Connect Telegram before completing registration so SentinelHome can deliver
+                  earthquake alerts to this account.
+                </p>
+                <button
+                  type="button"
+                  className="hr-btn hr-btn-secondary"
+                  onClick={connectTelegram}
+                  disabled={isSubmitting || telegramLinking}
+                >
+                  {telegramLinking ? 'Waiting for Telegram…' : telegramConnected ? 'Telegram connected ✓' : 'Connect Telegram'}
+                </button>
+                {telegramUrl && !telegramConnected && (
+                  <p><a href={telegramUrl} target="_blank" rel="noreferrer">Open Telegram link again</a></p>
+                )}
+                {telegramError && <p className="hr-field-error">{telegramError}</p>}
+              </div>
             </div>
             {renderStep()}
 
@@ -2043,10 +2123,10 @@ export default function HouseholdRegistration() {
                   type="button"
                   className="hr-btn hr-btn-primary"
                   onClick={handleSubmit}
-                  disabled={isSubmitting}
+                  disabled={isSubmitting || !telegramConnected}
                 >
-                  {isSubmitting ? 'Submitting…' : 'Complete Registration'}
-                  {!isSubmitting && <ChevronRight size={18} strokeWidth={1.8} />}
+                  {isSubmitting ? 'Submitting…' : telegramConnected ? 'Complete Registration' : 'Connect Telegram to continue'}
+                  {!isSubmitting && telegramConnected && <ChevronRight size={18} strokeWidth={1.8} />}
                 </button>
               ) : (
                 <button type="button" className="hr-btn hr-btn-primary" onClick={handleNext}>

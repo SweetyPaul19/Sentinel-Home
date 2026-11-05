@@ -22,6 +22,12 @@ export function loginAccount(email, password) {
 }
 export function logoutAccount() { return request("/api/auth/logout", { method: "POST" }); }
 export function getCurrentUser() { return request("/api/auth/me"); }
+export function startTelegramLink() {
+  return request("/api/telegram/link/start", { method: "POST" });
+}
+export function getTelegramLinkStatus() {
+  return request("/api/telegram/link/status");
+}
 
 // Households
 export function geocodeAddress(address) {
