@@ -67,6 +67,28 @@ def _run(job_id: str, event_id: str) -> None:
                     **event,
                 })
 
+        def record_household_result(result: dict) -> None:
+            with _lock:
+                job = _jobs[job_id]
+                partial = deepcopy(job.get("result") or {
+                    "simulation_event_id": event_id,
+                    "households_checked": 0,
+                    "households_with_nearby_earthquakes": 0,
+                    "households": [],
+                })
+                households = [
+                    item for item in partial.get("households", [])
+                    if item.get("household_id") != result.get("household_id")
+                ]
+                households.append(result)
+                partial["households"] = households
+                partial["households_checked"] = len(households)
+                partial["households_with_nearby_earthquakes"] = sum(
+                    item.get("nearby_earthquake_count", 0) > 0
+                    for item in households
+                )
+                job["result"] = partial
+
         record_event({
             "stage": "hazard_api",
             "status": "completed",
@@ -80,6 +102,7 @@ def _run(job_id: str, event_id: str) -> None:
             earthquake_data=_fixture(event_id),
             event_callback=record_event,
             simulation=True,
+            result_callback=record_household_result,
         )
         with _lock:
             _jobs[job_id].update({

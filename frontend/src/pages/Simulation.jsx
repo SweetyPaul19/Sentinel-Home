@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Check, ChevronRight, CircleAlert, Database, Gauge, GitBranch, Loader2, Radio, Search, ShieldCheck, Sparkles } from 'lucide-react'
 import { confirmSafe, getEarthquakeSimulation, startEarthquakeSimulation } from '../api/client'
@@ -11,6 +11,7 @@ const stages = [
   ['confirmation', 'Safety confirmation', 'Decision branch'], ['escalation', 'Voice escalation', 'Only after timeout'],
 ]
 const stageNames = Object.fromEntries(stages.map(([id, title]) => [id, title]))
+const SIMULATION_JOB_KEY = 'sentinelhome.simulation.job_id'
 
 function JsonPanel({ title, value }) {
   if (value === undefined || value === null) return null
@@ -53,12 +54,87 @@ export default function Simulation() {
   const [password, setPassword] = useState(''), [job, setJob] = useState(null), [error, setError] = useState(''), [running, setRunning] = useState(false)
   const events = useMemo(() => job?.events || [], [job]), result = job?.result || job, completed = job?.status === 'completed', latest = events[events.length - 1]
   const logLines = useMemo(() => events.map((event) => `[${event.timestamp ? new Date(event.timestamp).toLocaleTimeString() : '--:--:--'}] ${event.stage} · ${event.status} · ${event.title}`), [events])
-  async function handleSubmit(event) { event.preventDefault(); setRunning(true); setError(''); setJob(null); try { let current = await startEarthquakeSimulation(password); setJob(current); while (current.status === 'queued' || current.status === 'running') { await new Promise((resolve) => setTimeout(resolve, 700)); current = await getEarthquakeSimulation(current.job_id); setJob(current) } if (current.status === 'failed') throw new Error(current.error || 'Simulation failed'); setPassword('') } catch (err) { setError(err.message) } finally { setRunning(false) } }
+  const hasHouseholdResults = Boolean(result?.households?.length)
+
+  async function monitorSimulation(jobId, initial = null) {
+    let current = initial || await getEarthquakeSimulation(jobId)
+    let transientFailures = 0
+    setJob(current)
+    while (current.status === 'accepted' || current.status === 'queued' || current.status === 'running') {
+      await new Promise((resolve) => setTimeout(resolve, 700))
+      try {
+        current = await getEarthquakeSimulation(jobId)
+        transientFailures = 0
+        setError('')
+        setJob(current)
+      } catch (pollError) {
+        transientFailures += 1
+        if (transientFailures >= 10) {
+          throw new Error(`Simulation status connection lost. The run is still recoverable; press “Resume status” to reconnect. (${pollError.message})`, { cause: pollError })
+        }
+        setError(`Status connection interrupted; retrying (${transientFailures}/10)…`)
+        await new Promise((resolve) => setTimeout(resolve, Math.min(4000, transientFailures * 700)))
+      }
+    }
+    if (current.status === 'failed') throw new Error(current.error || 'Simulation failed')
+    sessionStorage.removeItem(SIMULATION_JOB_KEY)
+    return current
+  }
+
+  async function resumeSimulation(jobId = job?.job_id) {
+    if (!jobId) return
+    setRunning(true)
+    setError('')
+    try {
+      await monitorSimulation(jobId)
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setRunning(false)
+    }
+  }
+
+  useEffect(() => {
+    const savedJobId = sessionStorage.getItem(SIMULATION_JOB_KEY)
+    if (!savedJobId) return undefined
+    let cancelled = false
+    getEarthquakeSimulation(savedJobId).then((savedJob) => {
+      if (!cancelled) {
+        setRunning(true)
+        setJob(savedJob)
+        return monitorSimulation(savedJobId, savedJob)
+      }
+      return null
+    }).catch((err) => {
+      if (!cancelled) setError(err.message)
+    }).finally(() => {
+      if (!cancelled) setRunning(false)
+    })
+    return () => { cancelled = true }
+  }, [])
+
+  async function handleSubmit(event) {
+    event.preventDefault()
+    setRunning(true)
+    setError('')
+    setJob(null)
+    try {
+      const current = await startEarthquakeSimulation(password)
+      sessionStorage.setItem(SIMULATION_JOB_KEY, current.job_id)
+      setJob(current)
+      await monitorSimulation(current.job_id, current)
+      setPassword('')
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setRunning(false)
+    }
+  }
   async function handleConfirm(householdId) { try { await confirmSafe(householdId); setJob((current) => current && ({ ...current, result: { ...current.result, households: current.result.households.map((item) => item.household_id === householdId ? { ...item, confirmation_status: 'confirmed', escalation_required: false, alert: { ...item.alert, status: 'confirmed' } } : item) }, events: [...current.events, { event_id: `confirmation-${Date.now()}`, stage: 'confirmation', status: 'completed', title: 'Household confirmed safe', detail: 'Alert state updated; escalation prevented.', execution_mode: 'live', source: 'live_persistence', response: { escalation_prevented: true } }] })) } catch (err) { setError(err.message) } }
   return <main className="simulation-shell"><section className="simulation-hero"><div><span className="eyebrow">SENTINELHOME · INTERNAL ENGINE CONSOLE</span><h1>See the response engine think.</h1><p>Every card below is populated by a real backend event. The controlled earthquake is the only fixture; downstream outputs are passed into the next live component.</p></div><div className={`engine-state ${running ? 'state-running' : completed ? 'state-complete' : ''}`}><span className="live-dot" />{running ? 'LIVE EXECUTION' : completed ? 'RUN COMPLETE' : 'ENGINE STANDBY'}</div></section>
     <section className="glass-card simulation-control"><div><span className="eyebrow">CONTROLLED EARTHQUAKE FIXTURE</span><h2>Launch a deterministic test</h2><p>The event is fixed so the pipeline can be tested without waiting for a disaster. Gemini, ML, RAG, persistence and Telegram still run normally.</p></div><form onSubmit={handleSubmit}><input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Simulation password" required /><button disabled={running}>{running ? 'Engine running…' : 'Run live workflow →'}</button></form></section>
     {error && <div className="simulation-error">{error}</div>}
-    {(running || events.length > 0) && <><section className="engine-overview"><div className="engine-counter"><Radio size={18} /><b>{events.length}</b><span>backend events received</span></div><div className="engine-counter"><GitBranch size={18} /><b>{latest?.stage ? stageNames[latest.stage] || latest.stage : 'Waiting'}</b><span>latest active stage</span></div><div className="engine-counter"><Database size={18} /><b>Fixture → live</b><span>execution provenance</span></div></section><section className="engine-layout"><div className="engine-flow glass-card"><div className="engine-section-title"><GitBranch size={18} /><div><span>LIVE PIPELINE</span><h2>Actual execution stages</h2></div></div><div className="engine-stage-list">{stages.map(([id, title, source], index) => <div key={id}><StageCard stageId={id} title={title} source={source} events={events} index={index} running={running} />{index < stages.length - 1 && <ChevronRight className="engine-arrow" />}</div>)}</div></div><aside className="engine-log glass-card"><div className="engine-section-title"><span className="terminal-icon">›_</span><div><span>BACKEND STREAM</span><h2>Event log</h2></div></div><div className="engine-log-lines">{logLines.length ? logLines.map((line, index) => <div key={`${line}-${index}`}>{line}</div>) : <span>Waiting for backend telemetry…</span>}</div></aside></section><UrgencyBreakdown events={events} /><RAGPanel events={events} /></>}
-    {completed && result && <><section className="simulation-summary"><div className="simulation-metric"><span>Event</span><strong>{result.simulation_event_id}</strong></div><div className="simulation-metric"><span>Households checked</span><strong>{result.households_checked}</strong></div><div className="simulation-metric"><span>Nearby households</span><strong>{result.households_with_nearby_earthquakes}</strong></div></section><section className="household-list">{result.households?.map((item) => <HouseholdResult key={item.household_id} item={item} onConfirm={handleConfirm} />)}</section></>}
+    {(running || events.length > 0) && <><section className="engine-overview"><div className="engine-counter"><Radio size={18} /><b>{events.length}</b><span>backend events received</span></div><div className="engine-counter"><GitBranch size={18} /><b>{latest?.stage ? stageNames[latest.stage] || latest.stage : 'Waiting'}</b><span>latest active stage</span></div><div className="engine-counter"><Database size={18} /><b>Fixture → live</b><span>execution provenance</span></div></section><section className="engine-layout"><div className="engine-flow glass-card"><div className="engine-section-title"><GitBranch size={18} /><div><span>LIVE PIPELINE</span><h2>Actual execution stages</h2></div></div><div className="engine-stage-list">{stages.map(([id, title, source], index) => <div key={id}><StageCard stageId={id} title={title} source={source} events={events} index={index} running={running} />{index < stages.length - 1 && <ChevronRight className="engine-arrow" />}</div>)}</div></div><aside className="engine-log glass-card"><div className="engine-section-title"><span className="terminal-icon">›_</span><div><span>BACKEND STREAM</span><h2>Event log</h2></div></div><div className="engine-log-lines">{logLines.length ? logLines.map((line, index) => <div key={`${line}-${index}`}>{line}</div>) : <span>Waiting for backend telemetry…</span>}</div></aside></section><UrgencyBreakdown events={events} /><RAGPanel events={events} />{job?.job_id && !completed && !running && <button className="safe-button" onClick={() => resumeSimulation()}>Resume status</button>}</>}
+    {(completed || hasHouseholdResults) && result && <><section className="simulation-summary"><div className="simulation-metric"><span>Event</span><strong>{result.simulation_event_id}</strong></div><div className="simulation-metric"><span>Households checked</span><strong>{result.households_checked}</strong></div><div className="simulation-metric"><span>Nearby households</span><strong>{result.households_with_nearby_earthquakes}</strong></div></section><section className="household-list">{result.households?.map((item) => <HouseholdResult key={item.household_id} item={item} onConfirm={handleConfirm} />)}</section></>}
   </main>
 }
