@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from threading import Lock
 from uuid import uuid4
 
-from app.core.store import alerts
+from app.core.store import alerts, simulation_jobs
 from app.services.alert_service import is_simulation_alert
 from app.services.monitoring_service import run_monitoring_cycle
 
@@ -30,6 +30,16 @@ def _prune_jobs_locked() -> None:
     completed.sort(key=lambda item: item[1].get("completed_at", ""))
     for job_id, _job in completed[:-_MAX_RETAINED_COMPLETED_JOBS]:
         _jobs.pop(job_id, None)
+        try:
+            del simulation_jobs[job_id]
+        except KeyError:
+            pass
+
+
+def _persist_job_locked(job_id: str) -> None:
+    job = _jobs.get(job_id)
+    if job is not None:
+        simulation_jobs[job_id] = job
 
 
 def _fixture(event_id: str) -> dict:
@@ -61,6 +71,7 @@ def _run(job_id: str, event_id: str) -> None:
     with _lock:
         _jobs[job_id]["status"] = "running"
         _jobs[job_id]["started_at"] = datetime.now(timezone.utc).isoformat()
+        _persist_job_locked(job_id)
     try:
         def record_event(event: dict) -> None:
             with _lock:
@@ -68,6 +79,7 @@ def _run(job_id: str, event_id: str) -> None:
                     "timestamp": datetime.now(timezone.utc).isoformat(),
                     **event,
                 })
+                _persist_job_locked(job_id)
 
         def record_household_result(result: dict) -> None:
             with _lock:
@@ -90,6 +102,7 @@ def _run(job_id: str, event_id: str) -> None:
                     for item in households
                 )
                 job["result"] = partial
+                _persist_job_locked(job_id)
 
         record_event({
             "stage": "hazard_api",
@@ -112,6 +125,7 @@ def _run(job_id: str, event_id: str) -> None:
                 "completed_at": datetime.now(timezone.utc).isoformat(),
                 "result": result,
             })
+            _persist_job_locked(job_id)
     except Exception as exc:
         with _lock:
             _jobs[job_id].update({
@@ -119,6 +133,7 @@ def _run(job_id: str, event_id: str) -> None:
                 "completed_at": datetime.now(timezone.utc).isoformat(),
                 "error": str(exc),
             })
+            _persist_job_locked(job_id)
 
 
 def start_simulation() -> dict:
@@ -142,6 +157,7 @@ def start_simulation() -> dict:
             "created_at": datetime.now(timezone.utc).isoformat(),
             "events": [],
         }
+        _persist_job_locked(job_id)
     _executor.submit(_run, job_id, event_id)
     return get_simulation(job_id)
 
@@ -149,6 +165,8 @@ def start_simulation() -> dict:
 def get_simulation(job_id: str) -> dict | None:
     with _lock:
         job = _jobs.get(job_id)
+        if job is None:
+            job = simulation_jobs.get(job_id)
         # Return an isolated snapshot while the worker appends telemetry.
         return deepcopy(job) if job else None
 
@@ -156,7 +174,7 @@ def get_simulation(job_id: str) -> dict | None:
 def confirm_simulation_safe(job_id: str, household_id: str) -> dict | None:
     """Confirm only the simulation alert represented by this unguessable job."""
     with _lock:
-        job = _jobs.get(job_id)
+        job = _jobs.get(job_id) or simulation_jobs.get(job_id)
         if not job or job.get("status") != "completed":
             return None
         result = job.get("result") or {}
@@ -197,4 +215,6 @@ def confirm_simulation_safe(job_id: str, household_id: str) -> dict | None:
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
         job.setdefault("events", []).append(event)
+        _jobs[job_id] = job
+        _persist_job_locked(job_id)
         return {"status": "confirmed", "household_id": household_id}

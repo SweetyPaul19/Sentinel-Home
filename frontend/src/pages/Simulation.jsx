@@ -80,7 +80,7 @@ export default function Simulation() {
     let retryCount = 0
     let eventCursor = current?.events?.length || 0
     while (!current || current.status === 'queued' || current.status === 'running') {
-      await pause(retryCount ? Math.min(1000 * (2 ** (retryCount - 1)), 8000) : 900)
+      await pause(retryCount ? Math.min(1000 * (2 ** (retryCount - 1)), 8000) : 1500)
       try {
         const update = await getEarthquakeSimulation(jobId, eventCursor)
         eventCursor += update.events?.length || 0
@@ -94,6 +94,12 @@ export default function Simulation() {
         setJob(current)
         setError('')
       } catch (err) {
+        if (err.status === 404) {
+          window.sessionStorage.removeItem(ACTIVE_JOB_KEY)
+          current = { ...current, status: 'unavailable' }
+          setJob(current)
+          throw new Error('This simulation is no longer available on the backend. Start a new run.')
+        }
         if (err.status && err.status < 500 && err.status !== 429) throw err
         retryCount += 1
         if (retryCount >= 10) {
