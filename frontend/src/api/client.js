@@ -1,15 +1,19 @@
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
 
 async function request(path, options = {}) {
+  const headers = { ...options.headers };
+  if (options.body != null && !headers["Content-Type"]) headers["Content-Type"] = "application/json";
   const res = await fetch(`${BASE_URL}${path}`, {
-    headers: { "Content-Type": "application/json" },
+    headers,
     credentials: "include",
     ...options,
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
     const message = data.errors ? data.errors.join(", ") : data.message || "Request failed";
-    throw new Error(message);
+    const error = new Error(message);
+    error.status = res.status;
+    throw error;
   }
   return data;
 }
@@ -77,6 +81,11 @@ export function startEarthquakeSimulation(password) {
   });
 }
 
-export function getEarthquakeSimulation(jobId) {
-  return request(`/api/admin/simulation/earthquake/${jobId}`);
+export function confirmSimulationSafe(jobId, householdId) {
+  return request(`/api/admin/simulation/earthquake/${encodeURIComponent(jobId)}/${encodeURIComponent(householdId)}/confirm-safe`, { method: "POST" });
+}
+
+export function getEarthquakeSimulation(jobId, afterEvent) {
+  const cursor = afterEvent == null ? "" : `?after_event=${encodeURIComponent(afterEvent)}`;
+  return request(`/api/admin/simulation/earthquake/${encodeURIComponent(jobId)}${cursor}`);
 }

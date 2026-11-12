@@ -280,6 +280,7 @@
 //new -2 - animated
 
 import './App.css'
+import './dashboard-classy.css'   // ← add this
 import { ArrowRight, Globe2, ShieldCheck } from 'lucide-react'
 import { Route, Routes } from 'react-router-dom'
 import HouseholdRegistration from './pages/Householdregistration'

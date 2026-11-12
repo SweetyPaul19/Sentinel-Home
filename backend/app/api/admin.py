@@ -6,7 +6,7 @@ from app.services.monitoring_service import run_monitoring_cycle
 from app.scheduling.scheduler import scheduler_status, start_scheduler, stop_scheduler
 from app.services.delivery_service import process_pending_alerts
 from app.core.config import settings
-from app.services.simulation_service import get_simulation, start_simulation
+from app.services.simulation_service import confirm_simulation_safe, get_simulation, start_simulation
 
 
 admin_bp = Blueprint("admin", __name__, url_prefix="/api/admin")
@@ -30,7 +30,30 @@ def simulation_status(job_id):
         return jsonify({"status": "error", "message": "Simulation job not found"}), 404
     if job.get("status") == "failed":
         return jsonify(job), 502
+    if "after_event" in request.args:
+        try:
+            offset = max(0, int(request.args["after_event"]))
+        except (TypeError, ValueError):
+            return jsonify({"status": "error", "message": "after_event must be a non-negative integer"}), 400
+        all_events = job.get("events", [])
+        job["event_offset"] = min(offset, len(all_events))
+        job["event_count"] = len(all_events)
+        job["events"] = all_events[offset:]
+        if job.get("status") != "completed":
+            job.pop("result", None)
     return jsonify(job)
+
+
+@admin_bp.post("/simulation/earthquake/<job_id>/<household_id>/confirm-safe")
+def confirm_simulation_household_safe(job_id, household_id):
+    """Confirm a household alert created by this password-authorized simulation."""
+    result = confirm_simulation_safe(job_id, household_id)
+    if result is None:
+        return jsonify({
+            "status": "error",
+            "message": "Simulation alert not found or no longer confirmable",
+        }), 404
+    return jsonify(result)
 
 
 @admin_bp.get("/status")

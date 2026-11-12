@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { loginAccount } from '../api/client'
+import '../styles/sentinel-ui.css'
 
 export default function Login() {
   const navigate = useNavigate()
