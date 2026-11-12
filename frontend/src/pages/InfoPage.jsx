@@ -1,5 +1,6 @@
 import { ArrowDownRight, ArrowRight, ArrowUpRight, Activity, BellRing, BookOpen, Check, Clock3, HeartHandshake, House, MapPin, Radio, ShieldCheck, Waves, Wind, Zap } from 'lucide-react'
 import { Link, useLocation } from 'react-router-dom'
+import '../styles/sentinel-ui.css'
 
 const links = [
   ['Home', '/'], ['How it works', '/how-it-works'], ['Features', '/features'],

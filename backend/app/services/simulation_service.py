@@ -8,6 +8,8 @@ from datetime import datetime, timezone
 from threading import Lock
 from uuid import uuid4
 
+from app.core.store import alerts
+from app.services.alert_service import is_simulation_alert
 from app.services.monitoring_service import run_monitoring_cycle
 
 
@@ -147,7 +149,52 @@ def start_simulation() -> dict:
 def get_simulation(job_id: str) -> dict | None:
     with _lock:
         job = _jobs.get(job_id)
-        # Return an isolated snapshot. The worker appends events while the
-        # polling request is serializing its response; sharing the nested
-        # events list can otherwise expose a partial/stale telemetry frame.
+        # Return an isolated snapshot while the worker appends telemetry.
         return deepcopy(job) if job else None
+
+
+def confirm_simulation_safe(job_id: str, household_id: str) -> dict | None:
+    """Confirm only the simulation alert represented by this unguessable job."""
+    with _lock:
+        job = _jobs.get(job_id)
+        if not job or job.get("status") != "completed":
+            return None
+        result = job.get("result") or {}
+        item = next(
+            (row for row in result.get("households", [])
+             if row.get("household_id") == household_id),
+            None,
+        )
+        alert_info = (item or {}).get("alert") or {}
+        alert_id = alert_info.get("id")
+        alert = next(
+            (row for row in alerts.get(household_id, []) if row.get("id") == alert_id),
+            None,
+        )
+        if not item or not alert or not is_simulation_alert(alert):
+            return None
+        if alert.get("status") in {"active", "escalation_pending"}:
+            alert.update({
+                "status": "confirmed",
+                "confirmed_at": datetime.now(timezone.utc).isoformat(),
+                "escalation_required": False,
+            })
+            alerts[household_id] = alerts.get(household_id, [])
+        elif alert.get("status") != "confirmed":
+            return None
+        item["alert"] = dict(alert)
+        item["confirmation_status"] = "confirmed"
+        item["escalation_required"] = False
+        event = {
+            "event_id": f"confirmation-{uuid4()}",
+            "stage": "confirmation",
+            "status": "completed",
+            "title": "Household confirmed safe",
+            "detail": "Alert state updated; escalation prevented.",
+            "execution_mode": "live",
+            "source": "live_persistence",
+            "response": {"escalation_prevented": True},
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+        job.setdefault("events", []).append(event)
+        return {"status": "confirmed", "household_id": household_id}

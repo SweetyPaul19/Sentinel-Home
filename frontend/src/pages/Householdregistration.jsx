@@ -30,6 +30,8 @@ import {
   Pencil,
 } from 'lucide-react'
 
+import '../styles/sentinel-ui.css'
+
 /* ============================================================================
    CONFIG — options, initial state, validation
    ============================================================================ */

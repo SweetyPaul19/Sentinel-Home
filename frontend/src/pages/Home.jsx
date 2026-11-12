@@ -94,6 +94,7 @@
 import { Link } from 'react-router-dom'
 import '../App.css'
 import { ArrowRight, Globe2, ShieldCheck } from 'lucide-react'
+import '../styles/sentinel-ui.css'
 
 const backgroundImage = '/assets/background-image.jpg'
 const earthImage = '/assets/earth-image.png'
