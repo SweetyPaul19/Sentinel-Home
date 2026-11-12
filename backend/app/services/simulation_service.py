@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from threading import Lock
 from uuid import uuid4
 
-from app.core.store import alerts, simulation_jobs
+from app.core.store import alerts, households, simulation_jobs
 from app.services.alert_service import is_simulation_alert
 from app.services.monitoring_service import run_monitoring_cycle
 
@@ -75,7 +75,13 @@ def _run(job_id: str, event_id: str) -> None:
     try:
         def record_event(event: dict) -> None:
             with _lock:
-                _jobs[job_id].setdefault("events", []).append({
+                job = _jobs[job_id]
+                household_id = event.get("household_id")
+                if household_id:
+                    job["current_household_id"] = household_id
+                    household = households.get(household_id) or {}
+                    job["current_household_name"] = household.get("household_name")
+                job.setdefault("events", []).append({
                     "timestamp": datetime.now(timezone.utc).isoformat(),
                     **event,
                 })
@@ -155,6 +161,7 @@ def start_simulation() -> dict:
             "simulation_event_id": event_id,
             "status": "queued",
             "created_at": datetime.now(timezone.utc).isoformat(),
+            "households_total": len(households),
             "events": [],
         }
         _persist_job_locked(job_id)

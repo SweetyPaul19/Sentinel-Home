@@ -1870,3 +1870,8 @@ body,
 @media (prefers-reduced-motion:reduce) { .info-page *, .info-page *::before, .info-page *::after { animation-duration:.01ms!important; animation-iteration-count:1!important; transition-duration:.01ms!important; } }
 .about-hero h1 { font-size: clamp(2.7rem, 6.4vw, 5.7rem); }
 @media (max-width:700px) { .about-hero h1 { font-size: 2.9rem; } }
+.engine-overview { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.engine-counter b { overflow-wrap: anywhere; }
+.engine-household-id { display: block; margin-top: 5px; color: #829bad; font-size: .65rem; overflow-wrap: anywhere; }
+.household-progress { margin-bottom: 12px; padding: 12px 15px; border: 1px solid rgba(89, 206, 190, .28); border-radius: 11px; color: #a8d8d2; background: rgba(18, 92, 83, .18); font-size: .78rem; }
+@media (max-width: 850px) { .engine-overview { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
