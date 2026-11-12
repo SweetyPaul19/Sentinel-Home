@@ -41,8 +41,6 @@ def simulation_status(job_id):
             job["event_offset"] = min(offset, len(all_events))
             job["event_count"] = len(all_events)
             job["events"] = all_events[offset:]
-            if job.get("status") != "completed":
-                job.pop("result", None)
         response = jsonify(job)
     response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
     return response

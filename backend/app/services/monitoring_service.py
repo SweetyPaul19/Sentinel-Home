@@ -106,7 +106,7 @@ def run_monitoring_cycle(earthquake_data=None,event_callback=None,simulation=Fal
                 trace.append(emit(_stage("duplicate_guard","skipped","Existing event already processed",
                   response={"event_id":event_id},source="deduplication",upstream="nearby_normalization"),hid))
         if not simulation: households[hid]=h
-        result={"household_id":hid,"nearby_earthquake_count":len(events),"latest_earthquake":events[0] if events else None,
+        result={"household_id":hid,**({"household_name":h.get("household_name")} if simulation else {}),"nearby_earthquake_count":len(events),"latest_earthquake":events[0] if events else None,
                 "assessment":workflow.get("assessment") if workflow else None,"advice":workflow.get("advice") if workflow else None,
                 "alert":workflow.get("alert") if workflow else None,"confirmation_status":workflow.get("confirmation_status") if workflow else None,
                 "escalation_required":bool(workflow.get("escalation_required")) if workflow else False,
