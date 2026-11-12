@@ -40,13 +40,21 @@ def alert_node(state: SentinelState) -> SentinelState:
             return append_error({**failed_state, "alert": alert}, f"Notification delivery failed: {exc}")
 
         delivery = (alert.get("deliveries") or [])[-1:]
+        delivery_status = alert.get("delivery_status")
+        notification_status = "skipped" if delivery_status == "telegram_not_linked" else "completed"
+        notification_title = (
+            "Telegram notification skipped"
+            if notification_status == "skipped"
+            else "Alert delivered to Telegram"
+        )
         state = trace_event(
             state,
             stage="notification",
-            status="completed",
-            title="Alert delivered to Telegram",
+            status=notification_status,
+            title=notification_title,
+            detail=("Household owner has not linked Telegram." if notification_status == "skipped" else None),
             request={"channel": alert.get("delivery_channel"), "recipient": delivery[0].get("phone") if delivery else None},
-            response={"delivery_status": alert.get("delivery_status"), "provider_id": alert.get("delivery_id")},
+            response={"delivery_status": delivery_status, "provider_id": alert.get("delivery_id")},
         )
         state["trace"][-1]["provider"] = "Telegram"
         state["trace"][-1]["source"] = "live_provider"

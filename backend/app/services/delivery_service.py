@@ -6,7 +6,7 @@ from html import escape
 from datetime import datetime, timedelta, timezone
 
 from app.core.config import settings
-from app.core.store import alerts, households
+from app.core.store import alerts, households, users
 from app.services import notification_service
 from app.services.alert_service import update_alert
 from app.services.alert_service import is_simulation_alert
@@ -132,7 +132,7 @@ def send_alert_whatsapp(household_id: str, alert: dict) -> dict:
     household = households.get(household_id)
     if household is None:
         raise KeyError("Household not found")
-    telegram_enabled = bool(settings.TELEGRAM_BOT_TOKEN and settings.TELEGRAM_CHAT_ID)
+    telegram_enabled = bool(settings.TELEGRAM_BOT_TOKEN)
     contact = primary_contact(household)
     if not telegram_enabled and not contact:
         raise ValueError("A primary contact is required for notification delivery")
@@ -142,10 +142,32 @@ def send_alert_whatsapp(household_id: str, alert: dict) -> dict:
         "telegram" if telegram_enabled
         else ("sms" if legacy_only and not settings.TWILIO_WHATSAPP_FROM else "whatsapp")
     )
+    owner = users.get(household.get("owner_id")) if household.get("owner_id") else None
+    telegram_chat_id = owner.get("telegram_chat_id") if owner else None
+    recipient_id = owner.get("id") if owner else "telegram_unlinked"
+    recipient_name = owner.get("email") if owner else "Telegram account not linked"
+    if channel == "telegram" and not telegram_chat_id:
+        now = datetime.now(timezone.utc).isoformat()
+        skipped = {
+            "recipient_id": recipient_id,
+            "name": recipient_name,
+            "channel": "telegram",
+            "status": "telegram_not_linked",
+            "error": "Household owner has not linked Telegram",
+            "sent_at": now,
+        }
+        return update_alert(
+            household_id,
+            alert["id"],
+            delivery_status="telegram_not_linked",
+            delivery_channel="telegram",
+            delivery_error=skipped["error"],
+            deliveries=_record_delivery(alert, skipped),
+        ) or alert
     try:
         if channel == "telegram":
             message = notification_service.send_telegram(
-                settings.TELEGRAM_CHAT_ID, _telegram_alert_body(alert)
+                telegram_chat_id, _telegram_alert_body(alert)
             )
         elif channel == "sms":
             message = notification_service.send_sms(contact["phone"], alert["message"])
@@ -156,9 +178,9 @@ def send_alert_whatsapp(household_id: str, alert: dict) -> dict:
             )
     except Exception as exc:
         failed = {
-            "recipient_id": "telegram" if channel == "telegram" else contact.get("id", "primary"),
-            "name": "Telegram user" if channel == "telegram" else contact.get("name"),
-            "phone": settings.TELEGRAM_CHAT_ID if channel == "telegram" else contact.get("phone"),
+            "recipient_id": recipient_id if channel == "telegram" else contact.get("id", "primary"),
+            "name": recipient_name if channel == "telegram" else contact.get("name"),
+            "phone": contact.get("phone") if channel != "telegram" else None,
             "channel": channel, "status": "failed",
             "error": str(exc), "sent_at": now,
         }
@@ -169,9 +191,9 @@ def send_alert_whatsapp(household_id: str, alert: dict) -> dict:
         )
         raise
     record = {
-        "recipient_id": "telegram" if channel == "telegram" else contact.get("id", "primary"),
-        "name": "Telegram user" if channel == "telegram" else contact.get("name"),
-        "phone": settings.TELEGRAM_CHAT_ID if channel == "telegram" else contact.get("phone"),
+        "recipient_id": recipient_id if channel == "telegram" else contact.get("id", "primary"),
+        "name": recipient_name if channel == "telegram" else contact.get("name"),
+        "phone": contact.get("phone") if channel != "telegram" else None,
         "channel": channel, "status": "sent",
         "provider_id": getattr(message, "sid", None), "sent_at": now,
     }

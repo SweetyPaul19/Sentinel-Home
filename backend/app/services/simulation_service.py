@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
+from copy import deepcopy
 from datetime import datetime, timezone
 from threading import Lock
 from uuid import uuid4
@@ -15,6 +16,20 @@ from app.services.monitoring_service import run_monitoring_cycle
 _executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="sentinel-simulation")
 _jobs: dict[str, dict] = {}
 _lock = Lock()
+_MAX_RETAINED_COMPLETED_JOBS = 10
+
+
+def _prune_jobs_locked() -> None:
+    """Bound in-process simulation state so repeated demos cannot leak memory."""
+
+    completed = [
+        (job_id, job)
+        for job_id, job in _jobs.items()
+        if job.get("status") in {"completed", "failed"}
+    ]
+    completed.sort(key=lambda item: item[1].get("completed_at", ""))
+    for job_id, _job in completed[:-_MAX_RETAINED_COMPLETED_JOBS]:
+        _jobs.pop(job_id, None)
 
 
 def _fixture(event_id: str) -> dict:
@@ -54,6 +69,28 @@ def _run(job_id: str, event_id: str) -> None:
                     **event,
                 })
 
+        def record_household_result(result: dict) -> None:
+            with _lock:
+                job = _jobs[job_id]
+                partial = deepcopy(job.get("result") or {
+                    "simulation_event_id": event_id,
+                    "households_checked": 0,
+                    "households_with_nearby_earthquakes": 0,
+                    "households": [],
+                })
+                households = [
+                    item for item in partial.get("households", [])
+                    if item.get("household_id") != result.get("household_id")
+                ]
+                households.append(result)
+                partial["households"] = households
+                partial["households_checked"] = len(households)
+                partial["households_with_nearby_earthquakes"] = sum(
+                    item.get("nearby_earthquake_count", 0) > 0
+                    for item in households
+                )
+                job["result"] = partial
+
         record_event({
             "stage": "hazard_api",
             "status": "completed",
@@ -67,6 +104,7 @@ def _run(job_id: str, event_id: str) -> None:
             earthquake_data=_fixture(event_id),
             event_callback=record_event,
             simulation=True,
+            result_callback=record_household_result,
         )
         with _lock:
             _jobs[job_id].update({
@@ -87,6 +125,16 @@ def start_simulation() -> dict:
     job_id = str(uuid4())
     event_id = f"sentinelhome-simulation-{uuid4()}"
     with _lock:
+        _prune_jobs_locked()
+        active_job = next(
+            (
+                job for job in _jobs.values()
+                if job.get("status") in {"queued", "running"}
+            ),
+            None,
+        )
+        if active_job is not None:
+            return dict(active_job)
         _jobs[job_id] = {
             "job_id": job_id,
             "simulation_event_id": event_id,
@@ -101,7 +149,8 @@ def start_simulation() -> dict:
 def get_simulation(job_id: str) -> dict | None:
     with _lock:
         job = _jobs.get(job_id)
-        return dict(job) if job else None
+        # Return an isolated snapshot while the worker appends telemetry.
+        return deepcopy(job) if job else None
 
 
 def confirm_simulation_safe(job_id: str, household_id: str) -> dict | None:

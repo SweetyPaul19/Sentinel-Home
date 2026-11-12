@@ -38,7 +38,7 @@ def _skip(reason, mode):
     return [_stage(s,"skipped",f"{title} — {reason}",detail=f"Skipped because {reason}.",source="not_run",
                    upstream="nearby_normalization",execution_mode=mode) for s,title in names]
 
-def run_monitoring_cycle(earthquake_data=None,event_callback=None,simulation=False):
+def run_monitoring_cycle(earthquake_data=None,event_callback=None,simulation=False,result_callback=None):
     started=_now(); cycle_id=str(uuid4()); mode="fixture" if simulation else "live"
     source_households=[deepcopy(h) for h in households.values()] if simulation else list(households.values())
     results=[]; payload=None
@@ -112,6 +112,8 @@ def run_monitoring_cycle(earthquake_data=None,event_callback=None,simulation=Fal
                 "escalation_required":bool(workflow.get("escalation_required")) if workflow else False,
                 "workflow_errors":errors,"trace":trace}
         results.append(result)
+        if result_callback:
+            result_callback(deepcopy(result))
         if not simulation:
             completed=_now()
             status="failed" if any(e.get("status")=="failed" for e in trace) else "degraded" if errors or any(e.get("status")=="degraded" for e in trace) else "completed"

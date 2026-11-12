@@ -29,19 +29,23 @@ def simulation_status(job_id):
     if job is None:
         return jsonify({"status": "error", "message": "Simulation job not found"}), 404
     if job.get("status") == "failed":
-        return jsonify(job), 502
-    if "after_event" in request.args:
-        try:
-            offset = max(0, int(request.args["after_event"]))
-        except (TypeError, ValueError):
-            return jsonify({"status": "error", "message": "after_event must be a non-negative integer"}), 400
-        all_events = job.get("events", [])
-        job["event_offset"] = min(offset, len(all_events))
-        job["event_count"] = len(all_events)
-        job["events"] = all_events[offset:]
-        if job.get("status") != "completed":
-            job.pop("result", None)
-    return jsonify(job)
+        response = jsonify(job)
+        response.status_code = 502
+    else:
+        if "after_event" in request.args:
+            try:
+                offset = max(0, int(request.args["after_event"]))
+            except (TypeError, ValueError):
+                return jsonify({"status": "error", "message": "after_event must be a non-negative integer"}), 400
+            all_events = job.get("events", [])
+            job["event_offset"] = min(offset, len(all_events))
+            job["event_count"] = len(all_events)
+            job["events"] = all_events[offset:]
+            if job.get("status") != "completed":
+                job.pop("result", None)
+        response = jsonify(job)
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    return response
 
 
 @admin_bp.post("/simulation/earthquake/<job_id>/<household_id>/confirm-safe")

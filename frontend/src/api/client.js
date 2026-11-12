@@ -26,6 +26,12 @@ export function loginAccount(email, password) {
 }
 export function logoutAccount() { return request("/api/auth/logout", { method: "POST" }); }
 export function getCurrentUser() { return request("/api/auth/me"); }
+export function startTelegramLink() {
+  return request("/api/telegram/link/start", { method: "POST" });
+}
+export function getTelegramLinkStatus() {
+  return request(`/api/telegram/link/status?ts=${Date.now()}`, { cache: "no-store" });
+}
 
 // Households
 export function geocodeAddress(address) {
@@ -87,5 +93,5 @@ export function confirmSimulationSafe(jobId, householdId) {
 
 export function getEarthquakeSimulation(jobId, afterEvent) {
   const cursor = afterEvent == null ? "" : `?after_event=${encodeURIComponent(afterEvent)}`;
-  return request(`/api/admin/simulation/earthquake/${encodeURIComponent(jobId)}${cursor}`);
+  return request(`/api/admin/simulation/earthquake/${encodeURIComponent(jobId)}${cursor}`, { cache: "no-store" });
 }
